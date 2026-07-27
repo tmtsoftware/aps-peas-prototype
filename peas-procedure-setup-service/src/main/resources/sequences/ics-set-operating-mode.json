@@ -1,0 +1,16 @@
+[
+  {
+    "_type": "Setup",
+    "source": "APS.sequenceSubmitter",
+    "commandName": "setOperatingMode",
+    "paramSet": [
+      {
+        "ChoiceKey": {
+          "keyName": "operatingMode",
+          "values": ["STANDBY_MODE"],
+          "units": "NoUnits"
+        }
+      }
+    ]
+  }
+]

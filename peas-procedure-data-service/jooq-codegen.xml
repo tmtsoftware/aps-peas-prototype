@@ -1,0 +1,24 @@
+<configuration xmlns="https://www.jooq.org/xsd/jooq-codegen-3.19.0.xsd">
+    <jdbc>
+        <driver>org.postgresql.Driver</driver>
+        <url>jdbc:postgresql://localhost:5432/peas</url>
+        <user>admin</user>
+        <password>Zernike1</password>
+    </jdbc>
+
+    <generator>
+        <database>
+            <name>org.jooq.meta.postgres.PostgresDatabase</name>
+            <includes>Procedure|ProcedureIteration|ProcedureResult</includes>
+            <inputSchema>public</inputSchema>
+        </database>
+        <generate>
+            <pojos>true</pojos>
+            <daos>false</daos>
+        </generate>
+        <target>
+            <packageName>org.tmt.peasproceduredataservice.db.generated</packageName>
+            <directory>src/main/java</directory>
+        </target>
+    </generator>
+</configuration>
