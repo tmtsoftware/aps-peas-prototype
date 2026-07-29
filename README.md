@@ -1,8 +1,6 @@
 # aps-peas-prototype
 
-Consolidated sbt/npm project for the TMT APS (Alignment Procedure System)
-prototype suite. Combines what were previously four separate repositories
-into one build, with component naming aligned to the ICD.
+Consolidated sbt/npm project for the TMT APS PEAS prototype suite. 
 
 ## Components
 
@@ -17,8 +15,6 @@ into one build, with component naming aligned to the ICD.
 | PeasWebApplication | *(npm, not sbt)* | `peas-web-application/` | React/TypeScript frontend |
 | PeasExposureService | `peasExposureService` | `peas-exposure-service/` | New placeholder service (health-check stub only so far) |
 
-Note: there used to be a `PeasComputationHcd` submodule -- it was a
-`.g8`-template remnant that never did anything, and has been removed.
 
 `peas-web-application` is a decoupled npm project (sibling to the sbt build,
 not wired into it) -- build and run it independently with `npm`.
@@ -28,18 +24,6 @@ referenced in the Startup Guide below (`setup-tmt-auth.sh`, `setup-config.sh`,
 `generate-testmode-sequence.py`), carried over from the original
 `aps-submitter-prototype` repo root with paths updated for the new structure.
 
-## Build Instructions
-
-The sbt portion of this project depends on libraries generated from the
-[CSW](https://github.com/tmtsoftware/csw) and [ESW](https://github.com/tmtsoftware/esw)
-projects. See [here](https://www.scala-sbt.org/1.0/docs/Setup.html) for
-instructions on installing sbt.
-
-Run `sbt compile` from this root directory to build everything, or scope to
-a single project, e.g. `sbt peasProcedureSetupService/compile`.
-
-For `peas-web-application`, see its own README -- it's `npm install` / `npm start`,
-independent of the sbt build.
 
 ## CSW/ESW Prerequisites for Running Components
 
@@ -63,36 +47,29 @@ You can refer to the ESW-to-CSW version compatibility table
 
 You can run `csw-services --help` / `csw-services start --help` for more information.
 
-## Startup Guide (full end-to-end sequence)
+## Startup Guide 
 
 This is the complete order of operations to get every component running
-together locally -- carried over from the original `aps-submitter-prototype`
-top-level README (which was almost lost in the consolidation -- see
-[MIGRATION.md](MIGRATION.md)), with all paths and commands updated to the
-new consolidated structure. Run all commands from this repo's root
+together locally - Run all commands from this repo's root
 (`aps-peas-prototype/`) unless otherwise noted.
 
 > **Important:** Keycloak and the Config Service reset on every `csw-services` restart.
 > Steps 2 and 7 must be repeated each time.
 
-Before starting any app, set the following environment variable:
-* `TMT_LOG_HOME`
+Before starting any app, set the following environment variables:
+* `TMT_LOG_HOME` - directory location where CSW can log to
+* `INTERFACE_NAME=en0` - set to primary machine's interface name
+* `PUBLIC_INTERFACE_NAME=en0` 
+* `AAS_INTERFACE_NAME=en0`
 
 To set environment variables, use `export <ENV_VAR>=<VALUE>`.
-
-By default, a network interface will be auto-selected. If you have problems,
-or more than one network interface, set `INTERFACE_NAME` and
-`PUBLIC_INTERFACE_NAME` explicitly -- for development, these can both be set
-to your primary machine's interface name (e.g. `en0`). See the CSW docs on
-[Network Topology](http://tmtsoftware.github.io/csw/deployment/network-topology.html)
-for more information.
 
 ### 1. Start CSW Services
 
 ```bash
-csw-services start --location --auth --config --event --database
+csw-services start --location --auth --config --event
 ```
-
+Note: if using the Procedure Data Service (default) add "--database"
 ### 2. Run Auth Setup Script
 
 Must be run after every `csw-services` restart and before starting the ESW Gateway.
@@ -131,12 +108,30 @@ EOF
 esw-gateway-server start -p 8090 -l -c /tmp/command-role-mapping.conf
 ```
 
-### 4. Start APS Sequencer
+### 4. Start APS Sequencers, ICS Sequencer and PIT Sequencer
+
+Run each command on a separate terminal tab for visibility and debugging
 
 ```bash
-sbt "apsSequencerScriptsRunner/run sequencer -s APS -n primary -m APS_software_only_mode"
+ sbt "apsSequencerScriptsRunner/run sequencer -s APS -n peasA -m apsPeasSequencerA_ApsStandaloneMode"
 ```
-
+```bash
+ sbt "apsSequencerScriptsRunner/run sequencer -s APS -n peasB -m apsPeasSequencerB_ApsStandaloneMode"
+```
+```bash
+ sbt "apsSequencerScriptsRunner/run sequencer -s APS -n peasC -m apsPeasSequencerC_ApsStandaloneMode"
+```
+```bash
+ sbt "apsSequencerScriptsRunner/run sequencer -s APS -n peasD -m apsPeasSequencerD_ApsStandaloneMode"
+```
+For the ICS Sequencer, replace "_IcsSimulator" with "IcsOperational" to communicate with ICS assemblies
+```bash
+ sbt "apsSequencerScriptsRunner/run sequencer -s APS -n icsSequencer  -m icsSequencer_IcsSimulator"
+```
+For the PIT Sequencer, replace "_PitSimulator" with "PitOperational" to communicate with ICS assemblies
+```bash
+ sbt "apsSequencerScriptsRunner/run sequencer -s APS -n pitSequencer  -m pitSequencer_PitSimulator"
+```
 ### 5. Start Procedure Setup Service
 
 ```bash
@@ -158,13 +153,13 @@ Must be run after every `csw-services` restart (Config Service resets too).
 ./scripts/setup-config.sh
 ```
 
-### 8. Start the Computation Assembly
+### 8. Start the Computation Assembly (Optional)
 
 ```bash
 sbt "peasComputationDeploy/runMain peas.computationdeploy.ComputationDeployContainerCmdApp --local ./peas-computation-assembly/deploy/src/main/resources/JComputationAssemblyStandalone.conf"
 ```
 
-### 9. Start the Procedure Data Service
+### 9. Start the Procedure Data Service (Optional)
 
 ```bash
 DB_READ_USERNAME=admin DB_READ_PASSWORD=Zernike1 DB_WRITE_USERNAME=admin DB_WRITE_PASSWORD=Zernike1 sbt "peasProcedureDataService/run start -p 8084"
@@ -179,18 +174,11 @@ consolidation or not.
 
 1. Open `http://localhost:3000`
 2. Log in with `esw-user1` / `esw-user1`
-3. Enter config path: `/aps/sequences/testmode.json`
-4. Click **Load Template**
-5. Click **Submit Sequence**
+3. Click **Load**
+4. Change any configuration options available on screen
+5. Click **Build Sequence**
+6. Click **Start**
 
-Expected response:
-```json
-{
-  "_type": "Completed",
-  "runId": "...",
-  "result": { "paramSet": [] }
-}
-```
 
 ### Startup Guide Notes
 
