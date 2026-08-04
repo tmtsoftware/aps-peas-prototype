@@ -140,6 +140,13 @@ sbt "peasProcedureSetupService/run start --port 8085"
 
 ### 6. Start Web Application
 
+Perform install first time running or whenever code has changed
+```bash
+cd peas-web-application
+npm install
+```
+Run React front-end
+
 ```bash
 cd peas-web-application
 npm start
