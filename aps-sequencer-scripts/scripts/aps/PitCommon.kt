@@ -71,9 +71,11 @@ val pitCommon = reusableScript {
                 "aptPointingOffsetsCalibrationCentroidX=$aptPointingOffsetsCalibrationCentroidX, " +
                 "aptPointingOffsetsCalibrationCentroidY=$aptPointingOffsetsCalibrationCentroidY")
         // Selects the filter and pupil mask on the PIT assemblies, in parallel.
-        // NOTE: selectPupilMask's parameter is oddly named "filter" rather than "pupilMask"
-        // (apparent copy-paste artifact from selectFilter's table). pitPupilMask is declared
-        // above using PupilMaskWheel's own physical enum (PH-1-1, Clear), so it passes through
+        // selectPupilMask's parameter is "pupilMask" per the icd-db model
+        // (pit.PupilMaskWheel command-model.conf, requiredArgs=["pupilMask"]). The prose
+        // ICD table's "filter" was a copy-paste artifact from selectFilter, corrected in
+        // the model; the model is authoritative. pitPupilMask is declared above using
+        // PupilMaskWheel's own physical enum (PH-1-1, Clear), so it passes through
         // directly here with no further mapping needed.
         par(
             {
@@ -82,7 +84,7 @@ val pitCommon = reusableScript {
             },
             {
                 sendAssemblyCommand("ICS.PIT.PupilMaskWheel", Setup(prefix, "selectPupilMask")
-                    .add(choiceKey("filter", choicesOf("PH-1-1", "Clear")).set(pitPupilMask)))
+                    .add(choiceKey("pupilMask", choicesOf("PH-1-1", "Clear")).set(pitPupilMask)))
             }
         )
 

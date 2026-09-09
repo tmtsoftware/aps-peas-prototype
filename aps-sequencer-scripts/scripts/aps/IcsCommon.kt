@@ -53,10 +53,12 @@ private suspend fun CommandHandlerScope.setCommonOpticalPathState() {
                 .add(choiceKey("lightSource", choicesOf("SKY", "STIMULUS")).set(Choice("SKY"))))
         },
         {
+            // Same assembly twice: run sequentially inside one par branch. The motion
+            // assemblies enforce the SDD 6.1.3.3.2 Processing isolation gate, so parallel
+            // submission of two commands to one assembly is a race that intermittently
+            // rejects the second with WrongInternalStateIssue (busy/Processing).
             sendAssemblyCommand("ICS.FOC.CalibrationSourceStage", Setup(prefix, "setOptic")
                 .add(choiceKey("optic", choicesOf("CALIBRATION_SOURCE", "ZERNIKE1", "ZERNIKE2", "FIELD_STOP", "OPEN")).set(Choice("FIELD_STOP"))))
-        },
-        {
             sendAssemblyCommand("ICS.FOC.CalibrationSourceStage", Setup(prefix, "setSourceIntensity")
                 .add(floatKey("sourceIntensity").set(0.0f)))
         }
@@ -65,15 +67,16 @@ private suspend fun CommandHandlerScope.setCommonOpticalPathState() {
 
 // ICD 16.3: three preparatory commands issued at the very start of STANDBY_MODE, before the
 // mechanism default-position sweep. K-Mirror is taken out of TRACKING/SLEWING mode before its
-// own moveToDefaultPosition runs (per ICD 11.2.1.6, the setMode parameter is oddly named
-// "offset" despite being the operating-mode enum). PIT loop and detector exposure loop are
+// own moveToDefaultPosition runs. The setMode parameter is "mode" per the icd-db model
+// (foc.KMirror command-model.conf, requiredArgs=["mode"]); the prose ICD 11.2.1.6 table's
+// "offset" was a typo, corrected in the model. PIT loop and detector exposure loop are
 // stopped before mechanisms are parked. Run in parallel; all three complete before this
 // function returns, satisfying the "before default position" ordering requirement for KMirror.
 private suspend fun CommandHandlerScope.prepareForStandby() {
     par(
         {
             sendAssemblyCommand("ICS.FOC.KMirror", Setup(prefix, "setMode")
-                .add(choiceKey("offset", choicesOf("SLEWING", "TRACKING", "MANUAL")).set(Choice("MANUAL"))))
+                .add(choiceKey("mode", choicesOf("SLEWING", "TRACKING", "MANUAL")).set(Choice("MANUAL"))))
         },
         { sendToPitSequencer(Setup(prefix, "stopPitLoop")) },
         { sendAssemblyCommand("ICS.APT.Detector", Setup(prefix, "stopExposureLoop")) }
@@ -142,10 +145,12 @@ suspend fun CommandHandlerScope.setCalibrationSourceModeMechanismStates() {
                 .add(choiceKey("lightSource", choicesOf("SKY", "STIMULUS")).set(Choice("SKY"))))
         },
         {
+            // Same assembly twice: run sequentially inside one par branch. The motion
+            // assemblies enforce the SDD 6.1.3.3.2 Processing isolation gate, so parallel
+            // submission of two commands to one assembly is a race that intermittently
+            // rejects the second with WrongInternalStateIssue (busy/Processing).
             sendAssemblyCommand("ICS.FOC.CalibrationSourceStage", Setup(prefix, "setOptic")
                 .add(choiceKey("optic", choicesOf("CALIBRATION_SOURCE", "ZERNIKE1", "ZERNIKE2", "FIELD_STOP", "OPEN")).set(Choice("CALIBRATION_SOURCE"))))
-        },
-        {
             sendAssemblyCommand("ICS.FOC.CalibrationSourceStage", Setup(prefix, "setSourceIntensity")
                 .add(floatKey("sourceIntensity").set(100.0f)))
         }
@@ -170,10 +175,12 @@ suspend fun CommandHandlerScope.setStimulusSourceModeMechanismStates() {
                 .add(choiceKey("lightSource", choicesOf("SKY", "STIMULUS")).set(Choice("STIMULUS"))))
         },
         {
+            // Same assembly twice: run sequentially inside one par branch. The motion
+            // assemblies enforce the SDD 6.1.3.3.2 Processing isolation gate, so parallel
+            // submission of two commands to one assembly is a race that intermittently
+            // rejects the second with WrongInternalStateIssue (busy/Processing).
             sendAssemblyCommand("ICS.FOC.CalibrationSourceStage", Setup(prefix, "setOptic")
                 .add(choiceKey("optic", choicesOf("CALIBRATION_SOURCE", "ZERNIKE1", "ZERNIKE2", "FIELD_STOP", "OPEN")).set(Choice("FIELD_STOP"))))
-        },
-        {
             sendAssemblyCommand("ICS.FOC.CalibrationSourceStage", Setup(prefix, "setSourceIntensity")
                 .add(floatKey("sourceIntensity").set(0.0f)))
         }
