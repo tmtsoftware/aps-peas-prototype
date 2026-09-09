@@ -204,8 +204,7 @@ lazy val peasProcedureSetupService = project
   )
 
 // =============================================================================
-// PeasExposureService (new placeholder -- health-check stub only, from
-// the earlier scaffolding pass)
+// PeasExposureService 
 // =============================================================================
 
 lazy val peasExposureService = project
@@ -213,9 +212,19 @@ lazy val peasExposureService = project
   .settings(
     name := "peas-exposure-service",
     scalaVersion := "3.6.4",
+    fork := true,
+    Test / fork := true,
+    resolvers += "jitpack" at "https://jitpack.io",
     libraryDependencies ++= Seq(
-      Libs.`pekko-http`,
-      Libs.`pekko-actor-typed`,
-      Libs.`pekko-stream`
+      Libs.`esw-http-template-wiring` % "compile->compile;test->test",
+      Libs.`nom-tam-fits`,
+      Libs.`embedded-keycloak` % Test,
+      Libs.`scalatest` % Test,
+      Libs.`pekko-http-testkit` % Test,
+      Libs.`mockito` % Test,
+      Libs.`junit4-interface` % Test,
+      Libs.`testng-6-7` % Test,
+      Libs.`pekko-actor-testkit-typed` % Test,
+      Libs.`pekko-stream-testkit` % Test
     )
   )

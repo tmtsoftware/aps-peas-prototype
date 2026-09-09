@@ -17,6 +17,20 @@
           "values": [false],
           "units": "NoUnits"
         }
+      },
+      {
+        "BooleanKey": {
+          "keyName": "generateExposureEvent",
+          "values": [false],
+          "units": "NoUnits"
+        }
+      },
+      {
+        "StringKey": {
+          "keyName": "exposureFilename",
+          "values": ["18JUL2034_PSH_BBP_001_1B.FTS"],
+          "units": "NoUnits"
+        }
       }
     ]
   }

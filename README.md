@@ -61,6 +61,7 @@ Before starting any app, set the following environment variables:
 * `INTERFACE_NAME=en0` - set to primary machine's interface name
 * `PUBLIC_INTERFACE_NAME=en0` 
 * `AAS_INTERFACE_NAME=en0`
+* `PSH_EXPOSURE_FITS_ROOT_DIR=/tmp/exposures` - or whatever directory you want to use to exchange PSH exposures
 
 To set environment variables, use `export <ENV_VAR>=<VALUE>`.
 
@@ -138,7 +139,13 @@ For the PIT Sequencer, replace "_PitSimulator" with "PitOperational" to communic
 sbt "peasProcedureSetupService/run start --port 8085"
 ```
 
-### 6. Start Web Application
+### 6. Start Procedure Exposure Service
+```bash
+
+sbt "peasExposureService/run start --port 8086"
+```
+
+### 7. Start Web Application
 
 Perform install first time running or whenever code has changed
 ```bash
@@ -152,7 +159,7 @@ cd peas-web-application
 npm start
 ```
 
-### 7. Load Sequence Data into Config Service
+### 8. Load Sequence Data into Config Service
 
 Must be run after every `csw-services` restart (Config Service resets too).
 
@@ -160,13 +167,13 @@ Must be run after every `csw-services` restart (Config Service resets too).
 ./scripts/setup-config.sh
 ```
 
-### 8. Start the Computation Assembly (Optional)
+### 9. Start the Computation Assembly (Optional)
 
 ```bash
 sbt "peasComputationDeploy/runMain peas.computationdeploy.ComputationDeployContainerCmdApp --local ./peas-computation-assembly/deploy/src/main/resources/JComputationAssemblyStandalone.conf"
 ```
 
-### 9. Start the Procedure Data Service (Optional)
+### 10. Start the Procedure Data Service (Optional)
 
 ```bash
 DB_READ_USERNAME=admin DB_READ_PASSWORD=Zernike1 DB_WRITE_USERNAME=admin DB_WRITE_PASSWORD=Zernike1 sbt "peasProcedureDataService/run start -p 8084"
@@ -177,7 +184,7 @@ README and match what's committed in `peas-procedure-data-service/jooq-codegen.x
 (also flagged in [MIGRATION.md](MIGRATION.md)). Worth rotating at some point,
 consolidation or not.
 
-### 10. Use the App
+### 11. Use the App
 
 1. Open `http://localhost:3000`
 2. Log in with `esw-user1` / `esw-user1`

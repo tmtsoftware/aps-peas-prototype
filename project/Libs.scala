@@ -57,4 +57,12 @@ object Libs {
   // internal/private resolver configured elsewhere (~/.sbt/repositories or
   // similar) that I can't see from here.
   val `algorithm-lib` = "org.tmt.aps.peas" % "algorithm-lib" % "1.0.0"
+    
+  // --- FITS reading (peas-exposure-service) --------------------------------
+  // TODO(Scott): this sandbox has no Maven Central access, so I couldn't
+  // resolve/pin this against the actual registry. "gov.nasa.gsfc.heasarc" /
+  // "nom-tam-fits" is the standard/de-facto Java FITS library (BSD-3, used
+  // throughout the astronomy Java ecosystem) -- please confirm the latest
+  // stable version before relying on this coordinate.
+  val `nom-tam-fits` = "gov.nasa.gsfc.heasarc" % "nom-tam-fits" % "1.20.1"
 }

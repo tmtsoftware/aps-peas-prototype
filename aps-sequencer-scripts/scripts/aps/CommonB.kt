@@ -46,6 +46,9 @@ val commonB = reusableScript {
         val responseD = sequencerD.submitAndWait(seqD1, timeout = 120.seconds)
         println("CommonB: takeGoodExposureAndFindCentroids — sequencerD response: $responseD")
 
+        // Computation time simulation.
+        delay(5.seconds)
+
         publishEvent(buildProcedureEvent(Prefix.apply(prefix),
             type      = ProcedureEventType.INFO_MESSAGE,
             dialogKey = "takeGoodExposureAndFindCentroids-complete",

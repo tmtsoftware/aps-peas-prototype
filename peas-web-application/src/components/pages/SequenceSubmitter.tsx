@@ -10,6 +10,7 @@ import { loadTemplate, buildSequence } from '../../utils/api'
 import type { SubstitutionParam } from '../../models/Models'
 import { getBackendUrl } from '../../utils/resolveBackend'
 import { useLocationService } from '../../contexts/LocationServiceContext'
+import { useExposureImage } from '../../hooks/useExposureImage'
 import { useAuth } from '../../hooks/useAuth'
 import { useProcedureEvents } from '../../hooks/useProcedureEvents'
 import { usePublishUserPromptResponse } from '../../hooks/usePublishUserPromptResponse'
@@ -20,7 +21,6 @@ import type {
   ErrorResponse,
   OriginatingPromptType
 } from '../../models/UserPromptResponseEvent'
-import exposurePlaceholderImg from '../../assets/images/psh_exposure_placeholder.png'
 
 const { Text } = Typography
 const { TextArea } = Input
@@ -148,7 +148,12 @@ const BenchField = ({ label, value }: BenchFieldProps) => (
   </div>
 )
 
-const ExposurePanel = () => (
+interface ExposurePanelProps {
+  imageUrl?: string
+  imageFilename?: string
+}
+
+const ExposurePanel = ({ imageUrl, imageFilename }: ExposurePanelProps) => (
   <div style={styles.exposurePanel}>
     <Tabs
       size="small"
@@ -158,9 +163,13 @@ const ExposurePanel = () => (
       }))}
     />
     <div style={styles.exposureImageArea}>
-      <div style={styles.exposureFilename}>18JUL2034_PSH_BBP_001_1B.FTS</div>
+      <div style={styles.exposureFilename}>{imageFilename ?? '—'}</div>
       <div style={{ ...styles.exposureImageWrap, position: 'relative' }}>
-        <img src={exposurePlaceholderImg} alt="PSH exposure" style={styles.exposureImage} />
+        {imageUrl ? (
+          <img src={imageUrl} alt="PSH exposure" style={styles.exposureImage} />
+        ) : (
+          <div style={styles.exposureImageWaiting}>Waiting for exposure…</div>
+        )}
         <div style={styles.expandIcon} title="Expand to full screen">
           <svg width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
             <polyline points="7,2 2,2 2,7"   stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" fill="none" opacity="0.85"/>
@@ -320,6 +329,15 @@ export const SequenceSubmitter = (): React.JSX.Element => {
   // PeasProcedureSetupServiceImpl.buildSequence() resolving all REF: chains before applying
   // substitutions (so it can reach a step several REF levels deep).
   const [testAbort, setTestAbort] = useState<boolean>(false)
+  // Prototype-only test hook, same shape/purpose as testAbort above: there's no real
+  // APT/PIT/PSH Detector assembly in this prototype to publish exposureStoreCompleted (ICD
+  // SS5.1.6/17.1.4/22.1.4), so this lets takeGoodExposure simulate that publish directly,
+  // exercising peas-exposure-service's subscription end-to-end. exposureFilename is a bare
+  // filename -- matching exposureStoreCompleted's real ICD `filename` param exactly -- with no
+  // directory. peas-exposure-service resolves it against its own startup-configured root
+  // (exposure-service.fits-root-dir); this field has no opinion on where files live on disk.
+  const [generateExposureEvent, setGenerateExposureEvent] = useState<boolean>(false)
+  const [exposureFilename, setExposureFilename] = useState<string>('18JUL2034_PSH_BBP_001_1B.FTS')
   // Tracks whether the operator explicitly chose Abort from a USER_PROMPT dialog (DECISION
   // or WARNING). CSW's SubmitResponse can't distinguish "operator aborted" from any other
   // Error at the response level, so this is tracked locally the instant the choice is made,
@@ -329,12 +347,40 @@ export const SequenceSubmitter = (): React.JSX.Element => {
   const [startupEvents, setStartupEvents] = useState<ApsProcedureEvent[]>([])
   const [iterationTabs, setIterationTabs] = useState<IterationTab[]>([])
   const currentIterationRef = useRef<number>(-1)
+  // Keyed by iteration number, not a single shared value -- each iteration tab must
+  // show only its OWN exposure image, starting with none until that iteration's own
+  // takeGoodExposure actually publishes apsImageDisplayEvent. A single shared
+  // imageUrl (the earlier version of this) meant switching to a new iteration's tab
+  // showed the PREVIOUS iteration's image until this one's event happened to arrive.
+  const [iterationImages, setIterationImages] = useState<Map<number, { url: string; filename: string }>>(new Map())
+  // Mirrors iterationImages for cleanup effects, which need the latest value without
+  // adding iterationImages itself to their dependency array.
+  const iterationImagesRef = useRef<Map<number, { url: string; filename: string }>>(new Map())
+  // Object URLs live for the whole run (so switching back to an earlier iteration's
+  // tab still shows its image) -- revoked all at once in resetRunState / on unmount,
+  // not one-at-a-time as each new image arrives.
+  const handleExposureImageReady = useCallback((url: string, filename: string) => {
+    const n = currentIterationRef.current
+    setIterationImages(prev => {
+      const next = new Map(prev)
+      next.set(n, { url, filename })
+      iterationImagesRef.current = next
+      return next
+    })
+  }, [])
   // Holds the SequencerService for A created in handleSubmitSequence, so both handleAbort
   // (top-level Abort button) and handlePromptResponse (Abort from a WARNING/DECISION dialog)
   // can call abortSequence() on the same live connection, rather than re-resolving it.
   const sequencerServiceRef = useRef<SequencerService | null>(null)
 
   const { events, totalReceived, error: eventError, clear: clearEvents } = useProcedureEvents(true, observingModeSuffix)
+  // Gated on submitStatus === 'loading' (a sequence is actually running), not always-on
+  // like useProcedureEvents above -- CSW's event service delivers the last known event
+  // immediately on subscribe, so subscribing at mount/during setup would surface a
+  // stale image left over from a previous run before Sequencer D has done anything
+  // this session. No subscription exists until a run actually starts, so there's
+  // nothing stale for it to deliver.
+  const { error: exposureImageError } = useExposureImage(submitStatus === 'loading', handleExposureImageReady)
   const { publishResponse } = usePublishUserPromptResponse()
   const { getMessage } = useMessages()
 
@@ -444,7 +490,19 @@ export const SequenceSubmitter = (): React.JSX.Element => {
     setPromptPublishErrors({})
     setOperatorAborted(false)
     setActiveTab('startup')
+    iterationImagesRef.current.forEach(({ url }) => URL.revokeObjectURL(url))
+    iterationImagesRef.current = new Map()
+    setIterationImages(new Map())
   }, [clearEvents])
+
+  // Revokes whatever object URLs are still outstanding when the component itself
+  // unmounts (not on every render -- reads the ref, not iterationImages state, so
+  // this effect only needs to run once).
+  useEffect(() => {
+    return () => {
+      iterationImagesRef.current.forEach(({ url }) => URL.revokeObjectURL(url))
+    }
+  }, [])
 
   const procedureState = operatorAborted ? 'Aborted'
     : submitStatus === 'loading' ? 'Running'
@@ -563,6 +621,16 @@ export const SequenceSubmitter = (): React.JSX.Element => {
           stepName:   'takeGoodExposure',
           paramName:  'testAbort',
           paramValue: testAbort
+        },
+        {
+          stepName:   'takeGoodExposure',
+          paramName:  'generateExposureEvent',
+          paramValue: generateExposureEvent
+        },
+        {
+          stepName:   'takeGoodExposure',
+          paramName:  'exposureFilename',
+          paramValue: exposureFilename
         }
       ]
       const json = await buildSequence(baseUrl, templateJson, substitutions)
@@ -661,77 +729,78 @@ export const SequenceSubmitter = (): React.JSX.Element => {
       label: 'Setup',
       children: (
         <div style={styles.tabPanel}>
-          <div style={{ ...styles.setupCard, marginBottom: 16 }}>
-            <div style={styles.setupCardTitle}>Session</div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-              <label style={{ ...styles.setupLabel, whiteSpace: 'nowrap', width: 'auto' }}>Observing Mode</label>
-              <Select
-                value={observingModeSuffix}
-                onChange={v => setObservingModeSuffix(v)}
-                style={{ width: 180 }}
-                options={[
-                  { value: 'SoftwareOnlyMode', label: 'SoftwareOnlyMode' },
-                  { value: 'ApsStandaloneMode', label: 'ApsStandaloneMode' }
-                ]}
-              />
-              <Button
-                type="primary"
-                onClick={handleHomeAllMechanisms}
-                loading={sessionCommandRunning === 'homeAll'}
-                disabled={sessionCommandRunning !== null}
-                style={{ marginLeft: 10 }}
-              >
-                Home All Mechanisms
-              </Button>
-              <Button
-                type="primary"
-                onClick={handleStandByMode}
-                loading={sessionCommandRunning === 'standby'}
-                disabled={sessionCommandRunning !== null}
-              >
-                StandBy Mode
-              </Button>
+          <div style={{ display: 'flex', gap: 16, alignItems: 'flex-start' }}>
+            <div style={{ ...styles.setupCard, flex: '0 0 300px' }}>
+              <div style={styles.setupCardTitle}>Session</div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+                <label style={{ ...styles.setupLabel, whiteSpace: 'nowrap', width: 'auto' }}>Observing Mode</label>
+                <Select
+                  value={observingModeSuffix}
+                  onChange={v => setObservingModeSuffix(v)}
+                  style={{ width: 180 }}
+                  options={[
+                    { value: 'SoftwareOnlyMode', label: 'SoftwareOnlyMode' },
+                    { value: 'ApsStandaloneMode', label: 'ApsStandaloneMode' }
+                  ]}
+                />
+                <Button
+                  type="primary"
+                  onClick={handleHomeAllMechanisms}
+                  loading={sessionCommandRunning === 'homeAll'}
+                  disabled={sessionCommandRunning !== null}
+                >
+                  Home All Mechanisms
+                </Button>
+                <Button
+                  type="primary"
+                  onClick={handleStandByMode}
+                  loading={sessionCommandRunning === 'standby'}
+                  disabled={sessionCommandRunning !== null}
+                >
+                  StandBy Mode
+                </Button>
+              </div>
+              {sessionCommandError && (
+                <Alert type="error" message={sessionCommandError} showIcon style={{ marginTop: 10 }} />
+              )}
             </div>
-            {sessionCommandError && (
-              <Alert type="error" message={sessionCommandError} showIcon style={{ marginTop: 10 }} />
-            )}
-          </div>
-          <div style={styles.setupCard}>
-            <div style={styles.setupCardTitle}>Load Alignment Procedure Sequence Template</div>
-            <div style={{ ...styles.setupRow, marginBottom: 12 }}>
-              <label style={{ ...styles.setupLabel, whiteSpace: 'nowrap', width: 'auto' }}>Procedure</label>
-              <Select
-                value={procedureTemplate}
-                onChange={v => {
-                  setProcedureTemplate(v)
-                  setConfigPath(procedureTemplatePath(v))
-                }}
-                style={{ width: 260 }}
-                options={PROCEDURE_TEMPLATES}
-              />
-            </div>
-            <div style={styles.setupRow}>
-              <label style={styles.setupLabel}>Config Path</label>
-              <Input
-                placeholder="/aps/sequences/testmode.json"
-                value={configPath}
-                onChange={e => setConfigPath(e.target.value)}
-                onPressEnter={handleLoadTemplate}
-                disabled={loadStatus === 'loading'}
-                style={{ fontFamily: 'monospace', fontSize: 12 }}
-              />
-              <Button
-                type="primary"
-                onClick={handleLoadTemplate}
-                loading={loadStatus === 'loading'}
-                disabled={!configPath.trim()}
-              >
-                Load
-              </Button>
-            </div>
-            {loadError && <Alert type="error" message={loadError} showIcon style={{ marginTop: 10 }} />}
-            {eventError && <Alert type="error" message={`Event subscription: ${eventError}`} showIcon style={{ marginTop: 10 }} />}
-            {loadStatus === 'success' && templateJson && (
+            <div style={{ ...styles.setupCard, flex: 1, maxWidth: 'none' }}>
+              <div style={styles.setupCardTitle}>Load Alignment Procedure Sequence Template</div>
+              <div style={{ ...styles.setupRow, marginBottom: 12 }}>
+                <label style={{ ...styles.setupLabel, whiteSpace: 'nowrap', width: 'auto' }}>Procedure</label>
+                <Select
+                  value={procedureTemplate}
+                  onChange={v => {
+                    setProcedureTemplate(v)
+                    setConfigPath(procedureTemplatePath(v))
+                  }}
+                  style={{ width: 260 }}
+                  options={PROCEDURE_TEMPLATES}
+                />
+              </div>
+              <div style={styles.setupRow}>
+                <label style={styles.setupLabel}>Config Path</label>
+                <Input
+                  placeholder="/aps/sequences/testmode.json"
+                  value={configPath}
+                  onChange={e => setConfigPath(e.target.value)}
+                  onPressEnter={handleLoadTemplate}
+                  disabled={loadStatus === 'loading'}
+                  style={{ fontFamily: 'monospace', fontSize: 12 }}
+                />
+                <Button
+                  type="primary"
+                  onClick={handleLoadTemplate}
+                  loading={loadStatus === 'loading'}
+                  disabled={!configPath.trim()}
+                >
+                  Load
+                </Button>
+              </div>
+              {loadError && <Alert type="error" message={loadError} showIcon style={{ marginTop: 10 }} />}
+              {eventError && <Alert type="error" message={`Event subscription: ${eventError}`} showIcon style={{ marginTop: 10 }} />}
+              {exposureImageError && <Alert type="error" message={exposureImageError} showIcon style={{ marginTop: 10 }} />}
+              {loadStatus === 'success' && templateJson && (
               <div style={styles.setupJsonSection}>
                 <div style={styles.setupJsonLabel}>Template</div>
                 <TextArea
@@ -826,6 +895,20 @@ export const SequenceSubmitter = (): React.JSX.Element => {
                   </Checkbox>
                 </div>
                 <div style={{ marginTop: 12, display: 'flex', alignItems: 'center', gap: 10 }}>
+                  <Checkbox
+                    checked={generateExposureEvent}
+                    onChange={e => setGenerateExposureEvent(e.target.checked)}
+                  >
+                    Generate Exposure Event (simulate exposureStoreCompleted)
+                  </Checkbox>
+                  <label style={{ ...styles.setupLabel, marginLeft: 16 }}>Exposure Filename</label>
+                  <Input
+                    value={exposureFilename}
+                    onChange={e => setExposureFilename(e.target.value)}
+                    style={{ width: 220, fontFamily: 'monospace', fontSize: 12 }}
+                  />
+                </div>
+                <div style={{ marginTop: 12, display: 'flex', alignItems: 'center', gap: 10 }}>
                   <Button
                     type="primary"
                     onClick={handleBuildSequence}
@@ -858,6 +941,7 @@ export const SequenceSubmitter = (): React.JSX.Element => {
                 </Button>
               </div>
             )}
+          </div>
           </div>
         </div>
       )
@@ -899,7 +983,7 @@ export const SequenceSubmitter = (): React.JSX.Element => {
           onPromptResponse={handlePromptResponse}
           getMessage={getMessage}
         />
-        <ExposurePanel />
+        <ExposurePanel imageUrl={iterationImages.get(n)?.url} imageFilename={iterationImages.get(n)?.filename} />
       </div>
     )
   }))
@@ -1349,6 +1433,10 @@ const styles: Record<string, React.CSSProperties> = {
     maxWidth: '100%',
     maxHeight: '100%',
     objectFit: 'contain' as const,
+  },
+  exposureImageWaiting: {
+    color: '#666',
+    fontSize: 13,
   },
   exposureFooter: {
     display: 'flex',

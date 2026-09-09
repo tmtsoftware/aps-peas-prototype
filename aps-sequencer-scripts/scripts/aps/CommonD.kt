@@ -1,8 +1,11 @@
 package aps
 import csw.prefix.models.Prefix
+import csw.params.events.SystemEvent
+import csw.params.events.EventName
 import csw.params.javadsl.JKeyType
 import esw.ocs.dsl.core.reusableScript
 import esw.ocs.dsl.params.floatKey
+import esw.ocs.dsl.params.stringKey
 import esw.ocs.dsl.params.kGet
 import esw.ocs.dsl.params.first
 import kotlin.time.Duration.Companion.seconds
@@ -14,6 +17,23 @@ import kotlinx.coroutines.delay
 // (stringKey, floatKey, etc.) in the same file. Note: BooleanKey().make() takes only a
 // name, no Units argument (unlike StringKey/other JKeyType makes elsewhere in this codebase).
 private val testAbortKey = JKeyType.BooleanKey().make("testAbort")
+
+// generateExposureEvent/exposureFilename: UI-driven test hook, same shape and purpose as
+// testAbort above -- there's no real APT/PIT/PSH Detector assembly in this prototype to
+// publish the real exposureStoreCompleted event (see ICD SS5.1.6/17.1.4/22.1.4), so this flag
+// lets takeGoodExposure simulate that publish directly, driving peas-exposure-service's
+// subscription end-to-end without a real detector. exposureFilename is a bare filename (e.g.
+// "18JUL2034_PSH_BBP_001_1B.FTS"), matching exposureStoreCompleted's real ICD `filename` param
+// exactly -- it carries no directory. peas-exposure-service resolves it against its own
+// startup-configured root (exposure-service.fits-root-dir in its application.conf); this
+// script has no opinion on where FITS files actually live on disk.
+// TODO(Scott): publishing under a hardcoded Prefix("APS.ICS.PSH.Detector") to match what
+// peas-exposure-service subscribes to. No other Kotlin script in this codebase constructs a
+// Prefix from a literal string (every existing call is Prefix.apply(prefix), the script's own
+// runtime identity) -- please confirm Prefix.apply(String) is the right factory here.
+private val generateExposureEventKey = JKeyType.BooleanKey().make("generateExposureEvent")
+private val exposureStoreCompletedEventName = EventName("exposureStoreCompleted")
+private val simulatedDetectorPrefix = Prefix.apply("APS.ICS.PSH.Detector")
 
 val commonD = reusableScript {
 
@@ -37,6 +57,8 @@ val commonD = reusableScript {
     onSetup("takeGoodExposure") { command ->
         val intTime: Float = command.kGet(floatKey("intTime"))!!.first
         val testAbort: Boolean = command.kGet(testAbortKey)?.first ?: false
+        val generateExposureEvent: Boolean = command.kGet(generateExposureEventKey)?.first ?: false
+        val exposureFilename: String = command.kGet(stringKey("exposureFilename"))?.first ?: ""
 
         publishEvent(buildProcedureEvent(Prefix.apply(prefix),
             type      = ProcedureEventType.INFO_MESSAGE,
@@ -44,9 +66,27 @@ val commonD = reusableScript {
             helpKey   = "help.takeGoodExposure",
             messageId = "msg.takeGoodExposure.start"
         ))
-        println("CommonD: takeGoodExposure — intTime=$intTime, testAbort=$testAbort")
+        println("CommonD: takeGoodExposure — intTime=$intTime, testAbort=$testAbort, generateExposureEvent=$generateExposureEvent, exposureFilename=$exposureFilename")
         // TODO: implement — take PSH exposure with the specified integration time
-        delay(1.seconds)
+        // 5s (not the previous 1s) simulates a more realistic exposure duration, and
+        // incidentally widens the gap between this iteration's ITERATION marker event
+        // (published before takeGoodExposure runs) and the apsImageDisplayEvent this step
+        // triggers below -- reduces, but per useExposureImage.ts's own doc comment does not
+        // eliminate, the frontend's iteration-attribution race (no correlation ID exists in
+        // apsImageDisplayEvent's ICD payload to close that gap structurally).
+        delay(5.seconds)
+
+        // Simulates the detector's exposureStoreCompleted publish (see ICD SS5.1.6/17.1.4/22.1.4)
+        // so peas-exposure-service's subscription can be exercised end-to-end without a real
+        // APT/PIT/PSH Detector assembly. Placed here -- right after the simulated exposure
+        // completes, before the testAbort prompt logic below -- since "the file was stored" is
+        // logically a detector-side fact independent of whether the operator later judges the
+        // exposure acceptable.
+        if (generateExposureEvent) {
+            publishEvent(SystemEvent(simulatedDetectorPrefix, exposureStoreCompletedEventName)
+                .add(stringKey("filename").set(exposureFilename)))
+            println("CommonD: takeGoodExposure — published exposureStoreCompleted, filename=$exposureFilename")
+        }
 
         if (testAbort) {
             var awaitingResponse = true
