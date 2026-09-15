@@ -46,8 +46,7 @@ val commonB = reusableScript {
         val responseD = sequencerD.submitAndWait(seqD1, timeout = 120.seconds)
         println("CommonB: takeGoodExposureAndFindCentroids — sequencerD response: $responseD")
 
-        // Computation time simulation.
-        delay(5.seconds)
+
 
         publishEvent(buildProcedureEvent(Prefix.apply(prefix),
             type      = ProcedureEventType.INFO_MESSAGE,
@@ -67,7 +66,7 @@ val commonB = reusableScript {
         ))
         println("CommonB: calcImageAndPrOffsets — calculating pupil registration offsets and image offset from reference center")
         // TODO: implement
-        delay(1.seconds)
+        delay(3.seconds)
         publishEvent(buildProcedureEvent(Prefix.apply(prefix),
             type      = ProcedureEventType.INFO_MESSAGE,
             dialogKey = "calcImageAndPrOffsets-complete",
@@ -86,7 +85,7 @@ val commonB = reusableScript {
         ))
         println("CommonB: correctPitTracking — publishing pshPupilAndImageErrors event to PIT Loop")
         // TODO: implement — publish pshPupilAndImageErrors event containing PR and image offsets
-        delay(1.seconds)
+        delay(2.seconds)
         publishEvent(buildProcedureEvent(Prefix.apply(prefix),
             type      = ProcedureEventType.INFO_MESSAGE,
             dialogKey = "correctPitTracking-complete",

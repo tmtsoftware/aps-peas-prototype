@@ -658,7 +658,13 @@ export const SequenceSubmitter = (): React.JSX.Element => {
       })
       sequencerServiceRef.current = sequencerService
       const sequence = Sequence.from(builtSequenceJson)
-      const result = await sequencerService.submitAndWait(sequence, 60)
+      // In operations a real procedure can run up to ~30 minutes -- the prototype's
+      // original 60s only worked because most steps didn't actually do or wait for
+      // anything yet. Using that real ceiling directly rather than estimating from
+      // the current placeholder delays in CommonB.kt/CommonD.kt, which will keep
+      // changing as those scripts get built out further.
+      const submitTimeoutSeconds = 30 * 60
+      const result = await sequencerService.submitAndWait(sequence, submitTimeoutSeconds)
       if (result._type === 'Completed') {
         setSubmitStatus('success')
         setProgress(100)

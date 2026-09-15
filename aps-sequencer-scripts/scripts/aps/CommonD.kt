@@ -88,6 +88,10 @@ val commonD = reusableScript {
             println("CommonD: takeGoodExposure — published exposureStoreCompleted, filename=$exposureFilename")
         }
 
+        // This delay represents what Find and Identify time would take
+        delay(5.seconds)
+
+
         if (testAbort) {
             var awaitingResponse = true
             while (awaitingResponse) {
