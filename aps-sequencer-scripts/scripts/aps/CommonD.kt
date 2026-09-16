@@ -1,7 +1,9 @@
 package aps
 import csw.prefix.models.Prefix
+import csw.prefix.javadsl.JSubsystem
 import csw.params.events.SystemEvent
 import csw.params.events.EventName
+import csw.params.events.EventKey
 import csw.params.javadsl.JKeyType
 import esw.ocs.dsl.core.reusableScript
 import esw.ocs.dsl.params.floatKey
@@ -19,21 +21,27 @@ import kotlinx.coroutines.delay
 private val testAbortKey = JKeyType.BooleanKey().make("testAbort")
 
 // generateExposureEvent/exposureFilename: UI-driven test hook, same shape and purpose as
-// testAbort above -- there's no real APT/PIT/PSH Detector assembly in this prototype to
-// publish the real exposureStoreCompleted event (see ICD SS5.1.6/17.1.4/22.1.4), so this flag
-// lets takeGoodExposure simulate that publish directly, driving peas-exposure-service's
-// subscription end-to-end without a real detector. exposureFilename is a bare filename (e.g.
+// testAbort above -- lets takeGoodExposure simulate the PSH Detector Assembly's
+// exposureStoreCompleted publish directly in PEAS Software Only Mode (no real detector
+// assembly to command there -- see isSoftwareOnlyMode() branch below), driving
+// peas-exposure-service's subscription end-to-end. exposureFilename is a bare filename (e.g.
 // "18JUL2034_PSH_BBP_001_1B.FTS"), matching exposureStoreCompleted's real ICD `filename` param
 // exactly -- it carries no directory. peas-exposure-service resolves it against its own
 // startup-configured root (exposure-service.fits-root-dir in its application.conf); this
 // script has no opinion on where FITS files actually live on disk.
-// TODO(Scott): publishing under a hardcoded Prefix("APS.ICS.PSH.Detector") to match what
-// peas-exposure-service subscribes to. No other Kotlin script in this codebase constructs a
-// Prefix from a literal string (every existing call is Prefix.apply(prefix), the script's own
-// runtime identity) -- please confirm Prefix.apply(String) is the right factory here.
 private val generateExposureEventKey = JKeyType.BooleanKey().make("generateExposureEvent")
 private val exposureStoreCompletedEventName = EventName("exposureStoreCompleted")
-private val simulatedDetectorPrefix = Prefix.apply("APS.ICS.PSH.Detector")
+
+// APS.ICS.PSH.Detector -- confirmed against ICD-SDB-APS-APS_CCR03.pdf SS22 (component prefix
+// table, SS22.1.4's exposureStoreCompleted, SS22.2.1.3's takeExposure command). Used both to
+// publish exposureStoreCompleted ourselves (Software Only Mode simulation) and to subscribe to
+// it from the real assembly (Standalone Mode) -- see takeGoodExposure below.
+private val pshDetectorPrefix = Prefix.apply("APS.ICS.PSH.Detector")
+
+// APS.PeasExposureService -- must match PeasExposureServiceImpl.scala's
+// ImageDisplayEventSourcePrefix exactly, same as the frontend's useExposureImage.ts.
+private val imageDisplayEventSourcePrefix = Prefix.apply("APS.PeasExposureService")
+private val apsImageDisplayEventName = EventName("apsImageDisplayEvent")
 
 val commonD = reusableScript {
 
@@ -67,30 +75,64 @@ val commonD = reusableScript {
             messageId = "msg.takeGoodExposure.start"
         ))
         println("CommonD: takeGoodExposure — intTime=$intTime, testAbort=$testAbort, generateExposureEvent=$generateExposureEvent, exposureFilename=$exposureFilename")
-        // TODO: implement — take PSH exposure with the specified integration time
-        // 5s (not the previous 1s) simulates a more realistic exposure duration, and
-        // incidentally widens the gap between this iteration's ITERATION marker event
-        // (published before takeGoodExposure runs) and the apsImageDisplayEvent this step
-        // triggers below -- reduces, but per useExposureImage.ts's own doc comment does not
-        // eliminate, the frontend's iteration-attribution race (no correlation ID exists in
-        // apsImageDisplayEvent's ICD payload to close that gap structurally).
-        delay(5.seconds)
 
-        // Simulates the detector's exposureStoreCompleted publish (see ICD SS5.1.6/17.1.4/22.1.4)
-        // so peas-exposure-service's subscription can be exercised end-to-end without a real
-        // APT/PIT/PSH Detector assembly. Placed here -- right after the simulated exposure
-        // completes, before the testAbort prompt logic below -- since "the file was stored" is
-        // logically a detector-side fact independent of whether the operator later judges the
-        // exposure acceptable.
-        if (generateExposureEvent) {
-            publishEvent(SystemEvent(simulatedDetectorPrefix, exposureStoreCompletedEventName)
-                .add(stringKey("filename").set(exposureFilename)))
-            println("CommonD: takeGoodExposure — published exposureStoreCompleted, filename=$exposureFilename")
+        // 1. Take the exposure. APS Standalone Mode commands the real PSH Detector Assembly
+        // (ICD SS22.2.1.3's takeExposure); the assembly publishes exposureStoreCompleted
+        // itself as part of that longRunning work (ICD SS22.1.4), so we don't publish it
+        // ourselves in this branch. PEAS Software Only Mode has no real detector assembly to
+        // command, so it simulates the wait and publishes exposureStoreCompleted itself
+        // (unchanged from the previous behavior).
+        if (!isSoftwareOnlyMode()) {
+            // TODO(Scott): ICD SS22.2.1.3 declares integrationTime with units "second" --
+            // not sure whether .set(intTime) below needs an explicit .withUnits() call to
+            // match; couldn't verify the exact Kotlin DSL signature for setting param units
+            // against a real csw-params jar in this sandbox.
+            val takeExposureCmd = Setup(prefix, "takeExposure")
+                .add(floatKey("integrationTime").set(intTime))
+            val pshDetector = Assembly(JSubsystem.APS, "ICS.PSH.Detector", defaultTimeout = 60.seconds)
+            println("CommonD: takeGoodExposure — submitting takeExposure to $pshDetectorPrefix")
+            val takeExposureResponse = pshDetector.submitAndWait(takeExposureCmd)
+            println("CommonD: takeGoodExposure — PSH Detector Assembly takeExposure response: $takeExposureResponse")
+        } else {
+            delay(5.seconds)
+            if (generateExposureEvent) {
+                publishEvent(SystemEvent(pshDetectorPrefix, exposureStoreCompletedEventName)
+                    .add(stringKey("filename").set(exposureFilename)))
+                println("CommonD: takeGoodExposure — published exposureStoreCompleted, filename=$exposureFilename")
+            }
         }
 
-        // This delay represents what Find and Identify time would take
-        delay(5.seconds)
+        // 2. APS Standalone Mode additionally waits for the real assembly's own
+        // exposureStoreCompleted publish before proceeding -- per Scott, this is an explicit
+        // subscribe-and-wait on the event itself, not just relying on takeExposure's own
+        // submitAndWait response above.
+        if (!isSoftwareOnlyMode()) {
+            println("CommonD: takeGoodExposure — waiting for exposureStoreCompleted from $pshDetectorPrefix")
+            awaitFreshEvent(EventKey(pshDetectorPrefix, exposureStoreCompletedEventName))
+            println("CommonD: takeGoodExposure — received exposureStoreCompleted")
+        }
 
+        publishEvent(buildProcedureEvent(Prefix.apply(prefix),
+            type      = ProcedureEventType.INFO_MESSAGE,
+            dialogKey = "takeGoodExposure-findAndIdentify-start",
+            helpKey   = "help.takeGoodExposure",
+            messageId = "msg.takeGoodExposure.findAndIdentify.start"
+        ))
+        println("CommonD: takeGoodExposure — Find and Identify started")
+
+        // 3. Waits for peas-exposure-service's apsImageDisplayEvent (ICD SS35.1.2), published
+        // once the low-res PNG has actually been generated from this exposure -- that's what
+        // marks Find and Identify as complete.
+        println("CommonD: takeGoodExposure — waiting for apsImageDisplayEvent from $imageDisplayEventSourcePrefix")
+        awaitFreshEvent(EventKey(imageDisplayEventSourcePrefix, apsImageDisplayEventName))
+        println("CommonD: takeGoodExposure — received apsImageDisplayEvent")
+
+        publishEvent(buildProcedureEvent(Prefix.apply(prefix),
+            type      = ProcedureEventType.INFO_MESSAGE,
+            dialogKey = "takeGoodExposure-findAndIdentify-complete",
+            helpKey   = "help.takeGoodExposure",
+            messageId = "msg.takeGoodExposure.findAndIdentify.complete"
+        ))
 
         if (testAbort) {
             var awaitingResponse = true

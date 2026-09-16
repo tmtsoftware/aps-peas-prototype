@@ -7,6 +7,8 @@ import csw.params.commands.Sequence
 import csw.params.commands.SequenceCommand
 import csw.params.commands.Setup
 import csw.params.core.formats.JavaJsonSupport
+import csw.params.events.Event
+import csw.params.events.EventKey
 import csw.params.javadsl.JKeyType
 import csw.prefix.javadsl.JSubsystem
 import esw.ocs.api.models.ObsMode
@@ -17,6 +19,7 @@ import kotlinx.coroutines.delay
 import csw.params.core.models.Id
 import kotlin.time.Duration.Companion.seconds
 import kotlin.time.Duration.Companion.milliseconds
+import kotlinx.coroutines.CompletableDeferred
 import java.util.ArrayList
 import java.util.UUID
 
@@ -34,7 +37,12 @@ fun CswHighLevelDslApi.getPeasSequencer(source: SequencerLabel, target: Sequence
 
 // Software-only mode is identified by the "_SoftwareOnlyMode" obsMode suffix.
 // Any other suffix (e.g. "_ApsStandaloneMode") is treated as real hardware submission.
-fun ScriptScope.isSoftwareOnlyMode(): Boolean = obsMode.name().endsWith("_SoftwareOnlyMode")
+//
+// Receiver is CswHighLevelDslApi (not ScriptScope) for the same reason isOperationalMode()
+// below is: callable from onSetup handler blocks (CommandHandlerScope), not just top-level
+// script bodies. Widened for CommonD.kt's takeGoodExposure handler, which had no prior call
+// site to break -- ScriptScope already extends CswHighLevelDslApi transitively either way.
+fun CswHighLevelDslApi.isSoftwareOnlyMode(): Boolean = obsMode.name().endsWith("_SoftwareOnlyMode")
 
 // ICS/PIT sequencers use their own Operational/Simulator obsMode suffix convention
 // (e.g. "icsSequencer_IcsOperational", "pitSequencer_PitOperational"), distinct from the
@@ -43,6 +51,31 @@ fun ScriptScope.isSoftwareOnlyMode(): Boolean = obsMode.name().endsWith("_Softwa
 // interface both ScriptScope and CommandHandlerScope extend -- this makes it callable from
 // both top-level sequencer scripts and reusableScript onSetup handlers like IcsCommon.kt.
 fun CswHighLevelDslApi.isOperationalMode(): Boolean = obsMode.name().endsWith("Operational")
+
+// Subscribes fresh to eventKey and returns the first GENUINELY NEW event delivered on it --
+// CSW's event service always delivers the last known event immediately on subscribe, even if
+// it's stale/leftover from a previous run, with no way to distinguish "pre-existing cached
+// value" from "fresh publish" by looking at the event itself. The first delivery on a brand
+// new subscription is therefore always discarded outright; only the 2nd+ delivery is treated
+// as real. Same safeguard, same reasoning, as the frontend's useExposureImage.ts hook uses for
+// apsImageDisplayEvent -- this is the Kotlin-side equivalent for sequencer scripts that need to
+// wait on an event rather than just render it.
+suspend fun CswHighLevelDslApi.awaitFreshEvent(eventKey: EventKey): Event {
+    val deferred = CompletableDeferred<Event>()
+    var isFirstEvent = true
+    val subscription = onEvent(eventKey.toString()) { event ->
+        if (event.isInvalid) return@onEvent
+        if (isFirstEvent) {
+            isFirstEvent = false
+            println("awaitFreshEvent: discarding initial (pre-existing) delivery for $eventKey")
+            return@onEvent
+        }
+        if (!deferred.isCompleted) deferred.complete(event)
+    }
+    val event = deferred.await()
+    subscription.cancel()
+    return event
+}
 
 // Receiver is CswHighLevelDslApi (not ScriptScope) so this is callable from HandlerScope
 // contexts too (e.g. onGlobalError in PeasSequencerA.kts), which need it for GLC
