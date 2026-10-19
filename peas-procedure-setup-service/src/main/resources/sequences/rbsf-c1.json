@@ -28,5 +28,40 @@
     "source": "APS.sequenceSubmitter",
     "commandName": "rbsfCalcSegmentZernikes",
     "paramSet": []
+  },
+  {
+    "_type": "Setup",
+    "source": "APS.sequenceSubmitter",
+    "commandName": "rbsfTtOffsetsToActs",
+    "paramSet": [
+      {
+        "StringKey": {
+          "keyName": "centroidOffsetsX",
+          "values": ["centroidOffsets.centroidOffsetsX"],
+          "units": "NoUnits"
+        }
+      },
+      {
+        "StringKey": {
+          "keyName": "centroidOffsetsY",
+          "values": ["centroidOffsets.centroidOffsetsY"],
+          "units": "NoUnits"
+        }
+      }
+    ]
+  },
+  {
+    "_type": "Setup",
+    "source": "APS.sequenceSubmitter",
+    "commandName": "rbsfDecomposeActs",
+    "paramSet": [
+      {
+        "StringKey": {
+          "keyName": "desiredActDeltas",
+          "values": ["ttOffsetsToActs.desiredActDeltas"],
+          "units": "NoUnits"
+        }
+      }
+    ]
   }
 ]

@@ -1,5 +1,7 @@
 package aps
 import csw.prefix.models.Prefix
+import csw.prefix.javadsl.JSubsystem
+import csw.params.commands.CommandResponse
 import esw.ocs.dsl.core.reusableScript
 import esw.ocs.dsl.params.stringKey
 import esw.ocs.dsl.params.kGet
@@ -266,6 +268,68 @@ val rigidBodyAndSegmentFigureC = reusableScript {
             dialogKey = "rbsfTakeSnapIfM1OrWhCmdSent-complete",
             helpKey   = "help.rbsfTakeSnapIfM1OrWhCmdSent",
             messageId = "msg.rbsfTakeSnapIfM1OrWhCmdSent.complete"
+        ))
+    }
+
+    // Computation Assembly — ttOffsetsToActs
+    // Template params are results-store reference keys forwarded as-is to the assembly:
+    //   centroidOffsetsX, centroidOffsetsY: String
+    onSetup("rbsfTtOffsetsToActs") { command ->
+        publishEvent(buildProcedureEvent(Prefix.apply(prefix),
+            type      = ProcedureEventType.INFO_MESSAGE,
+            dialogKey = "rbsfTtOffsetsToActs-start",
+            helpKey   = "help.rbsfTtOffsetsToActs",
+            messageId = "msg.rbsfTtOffsetsToActs.start"
+        ))
+        val centroidOffsetsX: String = command.kGet(stringKey("centroidOffsetsX"))!!.first
+        val centroidOffsetsY: String = command.kGet(stringKey("centroidOffsetsY"))!!.first
+        println("RigidBodyAndSegmentFigureC: rbsfTtOffsetsToActs — centroidOffsetsX=$centroidOffsetsX centroidOffsetsY=$centroidOffsetsY")
+
+        val ttSetup = Setup(prefix, "ttOffsetsToActs")
+            .add(stringKey("centroidOffsetsX").set(centroidOffsetsX))
+            .add(stringKey("centroidOffsetsY").set(centroidOffsetsY))
+        val computationAssembly = Assembly(JSubsystem.APS, "PeasComputationAssembly", defaultTimeout = 60.seconds)
+        val response = computationAssembly.submitAndWait(ttSetup)
+        println("RigidBodyAndSegmentFigureC: rbsfTtOffsetsToActs response: $response")
+        if (response !is CommandResponse.Completed) {
+            throw RuntimeException("rbsfTtOffsetsToActs: ttOffsetsToActs failed: $response")
+        }
+
+        publishEvent(buildProcedureEvent(Prefix.apply(prefix),
+            type      = ProcedureEventType.INFO_MESSAGE,
+            dialogKey = "rbsfTtOffsetsToActs-complete",
+            helpKey   = "help.rbsfTtOffsetsToActs",
+            messageId = "msg.rbsfTtOffsetsToActs.complete"
+        ))
+    }
+
+    // Computation Assembly — decomposeActs
+    // Template param is a results-store reference key forwarded as-is to the assembly:
+    //   desiredActDeltas: String
+    onSetup("rbsfDecomposeActs") { command ->
+        publishEvent(buildProcedureEvent(Prefix.apply(prefix),
+            type      = ProcedureEventType.INFO_MESSAGE,
+            dialogKey = "rbsfDecomposeActs-start",
+            helpKey   = "help.rbsfDecomposeActs",
+            messageId = "msg.rbsfDecomposeActs.start"
+        ))
+        val desiredActDeltas: String = command.kGet(stringKey("desiredActDeltas"))!!.first
+        println("RigidBodyAndSegmentFigureC: rbsfDecomposeActs — desiredActDeltas=$desiredActDeltas")
+
+        val decomposeSetup = Setup(prefix, "decomposeActs")
+            .add(stringKey("desiredActDeltas").set(desiredActDeltas))
+        val computationAssembly = Assembly(JSubsystem.APS, "PeasComputationAssembly", defaultTimeout = 60.seconds)
+        val response = computationAssembly.submitAndWait(decomposeSetup)
+        println("RigidBodyAndSegmentFigureC: rbsfDecomposeActs response: $response")
+        if (response !is CommandResponse.Completed) {
+            throw RuntimeException("rbsfDecomposeActs: decomposeActs failed: $response")
+        }
+
+        publishEvent(buildProcedureEvent(Prefix.apply(prefix),
+            type      = ProcedureEventType.INFO_MESSAGE,
+            dialogKey = "rbsfDecomposeActs-complete",
+            helpKey   = "help.rbsfDecomposeActs",
+            messageId = "msg.rbsfDecomposeActs.complete"
         ))
     }
 

@@ -170,7 +170,7 @@ Must be run after every `csw-services` restart (Config Service resets too).
 ### 9. Start the Computation Assembly (Optional)
 
 ```bash
-sbt "peasComputationDeploy/runMain peas.computationdeploy.ComputationDeployContainerCmdApp --local ./peas-computation-assembly/deploy/src/main/resources/JComputationAssemblyStandalone.conf"
+sbt "peasComputationDeploy/runMain peas.computationdeploy.ComputationDeployContainerCmdApp --local ./src/main/resources/JComputationAssemblyStandalone.conf"
 ```
 
 ### 10. Start the Procedure Data Service (Optional)
