@@ -175,6 +175,8 @@ sbt "peasComputationDeploy/runMain peas.computationdeploy.ComputationDeployConta
 
 ### 10. Start the Procedure Data Service (Optional)
 
+Note: the Procedure Data Service requires setup in order to function properly.  These steps are set out in the README of that sub-project.
+
 ```bash
 DB_READ_USERNAME=admin DB_READ_PASSWORD=Zernike1 DB_WRITE_USERNAME=admin DB_WRITE_PASSWORD=Zernike1 sbt "peasProcedureDataService/run start -p 8084"
 ```
