@@ -2,6 +2,7 @@ package aps
 import csw.prefix.models.Prefix
 import csw.prefix.javadsl.JSubsystem
 import csw.params.commands.CommandResponse
+import csw.params.javadsl.JKeyType
 import esw.ocs.dsl.core.reusableScript
 import esw.ocs.dsl.params.stringKey
 import esw.ocs.dsl.params.kGet
@@ -9,6 +10,10 @@ import esw.ocs.dsl.params.first
 import kotlinx.coroutines.CompletableDeferred
 import kotlin.time.Duration.Companion.seconds
 import kotlinx.coroutines.delay
+
+// UI-driven flag (SequenceSubmitter.tsx) controlling whether rbsfTtOffsetsToActs and
+// rbsfDecomposeActs actually command the Computation Assembly. Defaults to false if absent.
+private val performComputationsFlagKey = JKeyType.BooleanKey().make("performComputationsFlag")
 
 val rigidBodyAndSegmentFigureC = reusableScript {
 
@@ -285,14 +290,19 @@ val rigidBodyAndSegmentFigureC = reusableScript {
         val centroidOffsetsY: String = command.kGet(stringKey("centroidOffsetsY"))!!.first
         println("RigidBodyAndSegmentFigureC: rbsfTtOffsetsToActs — centroidOffsetsX=$centroidOffsetsX centroidOffsetsY=$centroidOffsetsY")
 
-        val ttSetup = Setup(prefix, "ttOffsetsToActs")
-            .add(stringKey("centroidOffsetsX").set(centroidOffsetsX))
-            .add(stringKey("centroidOffsetsY").set(centroidOffsetsY))
-        val computationAssembly = Assembly(JSubsystem.APS, "PeasComputationAssembly", defaultTimeout = 60.seconds)
-        val response = computationAssembly.submitAndWait(ttSetup)
-        println("RigidBodyAndSegmentFigureC: rbsfTtOffsetsToActs response: $response")
-        if (response !is CommandResponse.Completed) {
-            throw RuntimeException("rbsfTtOffsetsToActs: ttOffsetsToActs failed: $response")
+        val performComputationsFlag: Boolean = command.kGet(performComputationsFlagKey)?.first ?: false
+        if (performComputationsFlag) {
+            val ttSetup = Setup(prefix, "ttOffsetsToActs")
+                .add(stringKey("centroidOffsetsX").set(centroidOffsetsX))
+                .add(stringKey("centroidOffsetsY").set(centroidOffsetsY))
+            val computationAssembly = Assembly(JSubsystem.APS, "PeasComputationAssembly", defaultTimeout = 60.seconds)
+            val response = computationAssembly.submitAndWait(ttSetup)
+            println("RigidBodyAndSegmentFigureC: rbsfTtOffsetsToActs response: $response")
+            if (response !is CommandResponse.Completed) {
+                throw RuntimeException("rbsfTtOffsetsToActs: ttOffsetsToActs failed: $response")
+            }
+        } else {
+            println("RigidBodyAndSegmentFigureC: rbsfTtOffsetsToActs — performComputationsFlag=false, skipping Computation Assembly")
         }
 
         publishEvent(buildProcedureEvent(Prefix.apply(prefix),
@@ -316,13 +326,18 @@ val rigidBodyAndSegmentFigureC = reusableScript {
         val desiredActDeltas: String = command.kGet(stringKey("desiredActDeltas"))!!.first
         println("RigidBodyAndSegmentFigureC: rbsfDecomposeActs — desiredActDeltas=$desiredActDeltas")
 
-        val decomposeSetup = Setup(prefix, "decomposeActs")
-            .add(stringKey("desiredActDeltas").set(desiredActDeltas))
-        val computationAssembly = Assembly(JSubsystem.APS, "PeasComputationAssembly", defaultTimeout = 60.seconds)
-        val response = computationAssembly.submitAndWait(decomposeSetup)
-        println("RigidBodyAndSegmentFigureC: rbsfDecomposeActs response: $response")
-        if (response !is CommandResponse.Completed) {
-            throw RuntimeException("rbsfDecomposeActs: decomposeActs failed: $response")
+        val performComputationsFlag: Boolean = command.kGet(performComputationsFlagKey)?.first ?: false
+        if (performComputationsFlag) {
+            val decomposeSetup = Setup(prefix, "decomposeActs")
+                .add(stringKey("desiredActDeltas").set(desiredActDeltas))
+            val computationAssembly = Assembly(JSubsystem.APS, "PeasComputationAssembly", defaultTimeout = 60.seconds)
+            val response = computationAssembly.submitAndWait(decomposeSetup)
+            println("RigidBodyAndSegmentFigureC: rbsfDecomposeActs response: $response")
+            if (response !is CommandResponse.Completed) {
+                throw RuntimeException("rbsfDecomposeActs: decomposeActs failed: $response")
+            }
+        } else {
+            println("RigidBodyAndSegmentFigureC: rbsfDecomposeActs — performComputationsFlag=false, skipping Computation Assembly")
         }
 
         publishEvent(buildProcedureEvent(Prefix.apply(prefix),

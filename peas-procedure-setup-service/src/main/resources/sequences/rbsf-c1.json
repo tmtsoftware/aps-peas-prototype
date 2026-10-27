@@ -47,6 +47,13 @@
           "values": ["centroidOffsets.centroidOffsetsY"],
           "units": "NoUnits"
         }
+      },
+      {
+        "BooleanKey": {
+          "keyName": "performComputationsFlag",
+          "values": [false],
+          "units": "NoUnits"
+        }
       }
     ]
   },
@@ -59,6 +66,13 @@
         "StringKey": {
           "keyName": "desiredActDeltas",
           "values": ["ttOffsetsToActs.desiredActDeltas"],
+          "units": "NoUnits"
+        }
+      },
+      {
+        "BooleanKey": {
+          "keyName": "performComputationsFlag",
+          "values": [false],
           "units": "NoUnits"
         }
       }

@@ -338,6 +338,9 @@ export const SequenceSubmitter = (): React.JSX.Element => {
   // (exposure-service.fits-root-dir); this field has no opinion on where files live on disk.
   const [generateExposureEvent, setGenerateExposureEvent] = useState<boolean>(false)
   const [exposureFilename, setExposureFilename] = useState<string>('18JUL2034_PSH_BBP_001_1B.FTS')
+  // Controls whether Sequencer C's rbsfTtOffsetsToActs / rbsfDecomposeActs steps (rbsf-c1.json)
+  // actually command the Computation Assembly, or skip the call.
+  const [performComputationsFlag, setPerformComputationsFlag] = useState<boolean>(false)
   // Tracks whether the operator explicitly chose Abort from a USER_PROMPT dialog (DECISION
   // or WARNING). CSW's SubmitResponse can't distinguish "operator aborted" from any other
   // Error at the response level, so this is tracked locally the instant the choice is made,
@@ -631,6 +634,17 @@ export const SequenceSubmitter = (): React.JSX.Element => {
           stepName:   'takeGoodExposure',
           paramName:  'exposureFilename',
           paramValue: exposureFilename
+        },
+        {
+          // Reaches rbsf-c1.json via rbsf-a1.json's rbsfC1SerializedSequence REF.
+          stepName:   'rbsfTtOffsetsToActs',
+          paramName:  'performComputationsFlag',
+          paramValue: performComputationsFlag
+        },
+        {
+          stepName:   'rbsfDecomposeActs',
+          paramName:  'performComputationsFlag',
+          paramValue: performComputationsFlag
         }
       ]
       const json = await buildSequence(baseUrl, templateJson, substitutions)
@@ -913,6 +927,14 @@ export const SequenceSubmitter = (): React.JSX.Element => {
                     onChange={e => setExposureFilename(e.target.value)}
                     style={{ width: 220, fontFamily: 'monospace', fontSize: 12 }}
                   />
+                </div>
+                <div style={{ marginTop: 12, display: 'flex', alignItems: 'center', gap: 10 }}>
+                  <Checkbox
+                    checked={performComputationsFlag}
+                    onChange={e => setPerformComputationsFlag(e.target.checked)}
+                  >
+                    Perform Computations (command Computation Assembly: ttOffsetsToActs, decomposeActs)
+                  </Checkbox>
                 </div>
                 <div style={{ marginTop: 12, display: 'flex', alignItems: 'center', gap: 10 }}>
                   <Button
